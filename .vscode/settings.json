@@ -1,0 +1,8 @@
+{
+  // 기존에 작성된 내용
+  "editor.formatOnSave": true,
+  "solidity.formatter": "prettier", // This is the default so it might be missing.
+  "[solidity]": {
+    "editor.defaultFormatter": "JuanBlanco.solidity"
+  }
+}
