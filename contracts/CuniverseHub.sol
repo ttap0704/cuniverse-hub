@@ -21,6 +21,10 @@ contract CuniverseHub is ICuniverseHub, Ownable {
     uint96 feeFraction;
   }
 
+  fallback() external payable {}
+
+  receive() external payable {}
+
   using Address for address;
   using SafeMath for uint256;
   using ERC165Checker for address;
@@ -39,19 +43,20 @@ contract CuniverseHub is ICuniverseHub, Ownable {
 
   function setFeeInfo(address payable _receiver, uint96 _feeFraction)
     public
+    override
     onlyOwner
   {
     _setFeeInfo(_receiver, _feeFraction);
   }
 
   function _setFeeInfo(address payable _receiver, uint96 _feeFraction)
-    private
+    internal
     onlyOwner
   {
     _feeInfo = FeeInfo(_receiver, _feeFraction);
   }
 
-  function transfer(
+  function proceedOrder(
     bytes32 _signiture,
     address _owner,
     address _contractAddress,
@@ -73,14 +78,11 @@ contract CuniverseHub is ICuniverseHub, Ownable {
       "CuniverseHub: invaild signature"
     );
 
+    require(msg.value == _price, "CuniverseHub: msg.value came in wrong");
+
     require(
       !Address.isContract(msg.sender),
       "CuniverseHub: msg.sender is not wallet address"
-    );
-
-    require(
-      _checkMsgSenderBalance(_price),
-      "CuniverseHub: msg.sender have not enough balance to buy"
     );
 
     require(
@@ -95,6 +97,16 @@ contract CuniverseHub is ICuniverseHub, Ownable {
       "CuniverseHub: not supported contract"
     );
 
+    require(
+      _isOwner(_owner, _contractAddress, _tokenId),
+      "CuniverseHub: owner does not have this token"
+    );
+
+    require(
+      _checkApproval(_owner, _contractAddress),
+      "CuniverseHub: no approval for transfer"
+    );
+
     uint256 feeAmount = _getFeeAmount(_price);
     (address creatorAddress, uint256 creatorAmount) = _calculationCreatorFee(
       _contractAddress,
@@ -103,35 +115,40 @@ contract CuniverseHub is ICuniverseHub, Ownable {
     );
     uint256 totalEarning = _totalEarning(_price, feeAmount, creatorAmount);
 
-    // emit Transfer(_owner, msg.sender, _contractAddress, _tokenId, _price);
+    _sendAmount(_feeInfo.receiver, feeAmount);
+    _sendAmount(_owner, totalEarning);
+    if (creatorAddress != address(0) && creatorAmount != 0) {
+      _sendAmount(creatorAddress, creatorAmount);
+    }
+
+    _transferFrom(_owner, _contractAddress, _tokenId);
+  }
+
+  function _transferFrom(
+    address _owner,
+    address _contractAddress,
+    uint256 _tokenId
+  ) internal {
+    IERC721 currentERC721 = IERC721(_contractAddress);
+
+    currentERC721.safeTransferFrom(_owner, msg.sender, _tokenId);
+    emit Transfer(_owner, msg.sender, _tokenId);
+  }
+
+  function _sendAmount(address _receiver, uint256 _balance) internal {
+    payable(_receiver).transfer(_balance);
   }
 
   function _getFeeAmount(uint256 _price) internal view returns (uint256) {
     return (_price * _feeInfo.feeFraction) / _feeDenominator();
   }
 
-  function _checkStartTime(uint256 _startTime)
-    public
-    view
-    virtual
-    returns (bool)
-  {
-    require(_startTime != 0, "CuniverseHub: start time not to be zero");
+  function _checkStartTime(uint256 _startTime) internal view returns (bool) {
     return _startTime < block.timestamp;
   }
 
-  function _checkEndTime(uint256 _endTime) public view virtual returns (bool) {
+  function _checkEndTime(uint256 _endTime) internal view returns (bool) {
     return _endTime > block.timestamp;
-  }
-
-  function _checkMsgSenderBalance(uint256 _price)
-    public
-    view
-    virtual
-    returns (bool)
-  {
-    require(_price != 0, "CuniverseHub: price not to be zero");
-    return msg.sender.balance >= _price;
   }
 
   function _verifySignature(
@@ -161,9 +178,27 @@ contract CuniverseHub is ICuniverseHub, Ownable {
     return _signiture == checkHash;
   }
 
-  function _isERC721(address _contractAddress) public view returns (bool) {
+  function _isERC721(address _contractAddress) internal view returns (bool) {
     return
       ERC165Checker.supportsInterface(_contractAddress, ERC721_INTERFACE_ID);
+  }
+
+  function _isOwner(
+    address _owner,
+    address _contractAddress,
+    uint256 _tokenId
+  ) internal view returns (bool) {
+    IERC721 currentERC721 = IERC721(_contractAddress);
+    return _owner == currentERC721.ownerOf(_tokenId);
+  }
+
+  function _checkApproval(address _owner, address _contractAddress)
+    internal
+    view
+    returns (bool)
+  {
+    IERC721 currentERC721 = IERC721(_contractAddress);
+    return currentERC721.isApprovedForAll(_owner, address(this));
   }
 
   // function _isERC1155(address _contractAddress) public view returns (bool) {
@@ -175,7 +210,7 @@ contract CuniverseHub is ICuniverseHub, Ownable {
     address _contractAddress,
     uint256 _tokenId,
     uint256 _price
-  ) public view virtual returns (address, uint256) {
+  ) internal view returns (address, uint256) {
     bool supportERC165 = ERC165Checker.supportsERC165(_contractAddress);
 
     if (supportERC165) {
@@ -197,7 +232,7 @@ contract CuniverseHub is ICuniverseHub, Ownable {
     uint256 _price,
     uint256 _fee,
     uint256 _creatorAmount
-  ) internal view returns (uint256) {
+  ) internal pure returns (uint256) {
     return SafeMath.sub(SafeMath.sub(_price, _fee), _creatorAmount);
   }
 
