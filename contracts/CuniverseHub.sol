@@ -8,6 +8,7 @@ import "@openzeppelin/contracts/utils/math/SafeMath.sol";
 import "@openzeppelin/contracts/utils/introspection/ERC165Checker.sol";
 
 import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 
 import "@openzeppelin/contracts/interfaces/IERC2981.sol";
 import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
@@ -15,7 +16,7 @@ import "@openzeppelin/contracts/token/ERC1155/IERC1155.sol";
 import "@openzeppelin/contracts/token/common/ERC2981.sol";
 import "@openzeppelin/contracts/interfaces/IERC2981.sol";
 
-contract CuniverseHub is ICuniverseHub, Ownable {
+contract CuniverseHub is ICuniverseHub, Ownable, EIP712 {
   struct FeeInfo {
     address payable receiver;
     uint96 feeFraction;
@@ -35,9 +36,17 @@ contract CuniverseHub is ICuniverseHub, Ownable {
   bytes4 private constant ERC2981_INTERFACE_ID = type(IERC2981).interfaceId;
   bytes4 private constant ERC721_INTERFACE_ID = type(IERC721).interfaceId;
 
+  string private constant ORDER_TYPE =
+    "Order(address owner,address contractAddress,uint256 tokenId,uint256 price,uint256 startTime,uint256 endTime)";
+
+  bytes32 private constant ORDER_TYPEHASH =
+    keccak256(abi.encodePacked(ORDER_TYPE));
+
   // bytes4 private constant ERC1155_INTERFACE_ID = type(IERC1155).interfaceId;
 
-  constructor(address payable receiver_, uint96 feeFraction_) {
+  constructor(address payable receiver_, uint96 feeFraction_)
+    EIP712("cuinverse.io", "1")
+  {
     setFeeInfo(receiver_, feeFraction_);
   }
 
@@ -51,34 +60,38 @@ contract CuniverseHub is ICuniverseHub, Ownable {
 
   function _setFeeInfo(address payable _receiver, uint96 _feeFraction)
     internal
-    onlyOwner
   {
     _feeInfo = FeeInfo(_receiver, _feeFraction);
   }
 
   function proceedOrder(
-    bytes32 _signiture,
     address _owner,
     address _contractAddress,
     uint256 _tokenId,
     uint256 _price,
     uint256 _startTime,
-    uint256 _endTime
+    uint256 _endTime,
+    uint8 v,
+    bytes32 r,
+    bytes32 s
   ) public payable {
+    Order memory order = Order(
+      _owner,
+      _contractAddress,
+      _tokenId,
+      _price,
+      _startTime,
+      _endTime
+    );
+
     require(
-      _verifySignature(
-        _signiture,
-        _owner,
-        _contractAddress,
-        _tokenId,
-        _price,
-        _startTime,
-        _endTime
-      ),
-      "CuniverseHub: invaild signature"
+      _verifyOrder(_owner, order, v, r, s),
+      "CuniverseHub: invaild order"
     );
 
     require(msg.value == _price, "CuniverseHub: msg.value came in wrong");
+
+    require(msg.sender != _owner, "CuniverseHub: can not buy owned token");
 
     require(
       !Address.isContract(msg.sender),
@@ -135,6 +148,27 @@ contract CuniverseHub is ICuniverseHub, Ownable {
     emit Transfer(_owner, msg.sender, _tokenId);
   }
 
+  function _hashOrder(Order memory _order) public view returns (bytes32) {
+    return
+      keccak256(
+        abi.encodePacked(
+          "\\x19\\x01",
+          EIP712._domainSeparatorV4(),
+          keccak256(
+            abi.encodePacked(
+              ORDER_TYPEHASH,
+              _order.owner,
+              _order.contractAddress,
+              _order.tokenId,
+              _order.price,
+              _order.startTime,
+              _order.endTime
+            )
+          )
+        )
+      );
+  }
+
   function _sendAmount(address _receiver, uint256 _balance) internal {
     payable(_receiver).transfer(_balance);
   }
@@ -151,31 +185,14 @@ contract CuniverseHub is ICuniverseHub, Ownable {
     return _endTime > block.timestamp;
   }
 
-  function _verifySignature(
-    bytes32 _signiture,
-    address _owner,
-    address _contractAddress,
-    uint256 _tokenId,
-    uint256 _price,
-    uint256 _startTime,
-    uint256 _endTime
-  ) public pure virtual returns (bool) {
-    require(
-      _contractAddress != address(0),
-      "CuniverseHub: smart contract address not to be zero"
-    );
-
-    bytes32 checkHash = keccak256(
-      abi.encodePacked(
-        _owner,
-        _contractAddress,
-        _tokenId,
-        _price,
-        _startTime,
-        _endTime
-      )
-    );
-    return _signiture == checkHash;
+  function _verifyOrder(
+    address _signer,
+    Order memory _order,
+    uint8 v,
+    bytes32 r,
+    bytes32 s
+  ) public view returns (bool) {
+    return _signer == ecrecover(_hashOrder(_order), v, r, s);
   }
 
   function _isERC721(address _contractAddress) internal view returns (bool) {
