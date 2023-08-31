@@ -8,7 +8,6 @@ import "@openzeppelin/contracts/utils/math/SafeMath.sol";
 import "@openzeppelin/contracts/utils/introspection/ERC165Checker.sol";
 
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 
 import "@openzeppelin/contracts/interfaces/IERC2981.sol";
 import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
@@ -16,7 +15,7 @@ import "@openzeppelin/contracts/token/ERC1155/IERC1155.sol";
 import "@openzeppelin/contracts/token/common/ERC2981.sol";
 import "@openzeppelin/contracts/interfaces/IERC2981.sol";
 
-contract CuniverseHub is ICuniverseHub, Ownable, EIP712 {
+contract CuniverseHub is ICuniverseHub, Ownable {
   struct FeeInfo {
     address payable receiver;
     uint96 feeFraction;
@@ -36,18 +35,27 @@ contract CuniverseHub is ICuniverseHub, Ownable, EIP712 {
   bytes4 private constant ERC2981_INTERFACE_ID = type(IERC2981).interfaceId;
   bytes4 private constant ERC721_INTERFACE_ID = type(IERC721).interfaceId;
 
-  string private constant ORDER_TYPE =
-    "Order(address owner,address contractAddress,uint256 tokenId,uint256 price,uint256 startTime,uint256 endTime)";
-
+  bytes32 public DOMAIN_SEPARATOR;
   bytes32 private constant ORDER_TYPEHASH =
-    keccak256(abi.encodePacked(ORDER_TYPE));
+    keccak256(
+      "Order(address owner,address contractAddress,uint256 tokenId,uint256 price,uint256 startTime,uint256 endTime)"
+    );
 
   // bytes4 private constant ERC1155_INTERFACE_ID = type(IERC1155).interfaceId;
 
-  constructor(address payable receiver_, uint96 feeFraction_)
-    EIP712("cuinverse.io", "1")
-  {
+  constructor(address payable receiver_, uint96 feeFraction_) {
     setFeeInfo(receiver_, feeFraction_);
+    DOMAIN_SEPARATOR = keccak256(
+      abi.encode(
+        keccak256(
+          "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"
+        ),
+        keccak256(bytes("Cuniverse")),
+        keccak256(bytes("1.0")),
+        block.chainid,
+        address(this)
+      )
+    );
   }
 
   function setFeeInfo(address payable _receiver, uint96 _feeFraction)
@@ -152,10 +160,10 @@ contract CuniverseHub is ICuniverseHub, Ownable, EIP712 {
     return
       keccak256(
         abi.encodePacked(
-          "\\x19\\x01",
-          EIP712._domainSeparatorV4(),
+          "\x19\x01",
+          DOMAIN_SEPARATOR,
           keccak256(
-            abi.encodePacked(
+            abi.encode(
               ORDER_TYPEHASH,
               _order.owner,
               _order.contractAddress,

@@ -5,6 +5,7 @@ import "@nomicfoundation/hardhat-toolbox";
 dotenv.config();
 
 const {
+  INFURA_KEY,
   ALCHEMY_KEY,
   ACCOUNT_PRIVATE_KEY,
   CONTRACT_DEPLOYER_KEY,
@@ -23,8 +24,12 @@ const config: HardhatUserConfig = {
   },
   networks: {
     sepolia: {
-      url: `https://sepolia.infura.io/v3/${ALCHEMY_KEY}`,
+      url: `https://eth-sepolia.g.alchemy.com/v2/${ALCHEMY_KEY}`,
       accounts: [`0x${CONTRACT_DEPLOYER_KEY}`, `0x${ACCOUNT_PRIVATE_KEY}`],
+    },
+    goerli: {
+      url: `https://goerli.infura.io/v3/${INFURA_KEY}`,
+      accounts: [`0x${ACCOUNT_PRIVATE_KEY}`, `0x${CONTRACT_DEPLOYER_KEY}`],
     },
   },
   etherscan: {

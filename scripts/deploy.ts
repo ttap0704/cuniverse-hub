@@ -9,6 +9,7 @@ async function main() {
     "0x9E43e12263DAF3E9AaCDf968E0C0dB65A61354Fe",
     "250",
   ]);
+  console.log({ CuniverseHub });
   await CuniverseHub.waitForDeployment();
 
   console.log("contract address:", await CuniverseHub.getAddress());
